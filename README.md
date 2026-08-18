@@ -96,14 +96,6 @@ with 76.235 seconds for the reference pipeline. The sample has no detected
 overlap, so the integration test also exercises the separate exclusive path on
 inputs where it differs when overlap is present.
 
-## C++ backend
-
-[`moonshine-ai/cpp-annote`](https://github.com/moonshine-ai/cpp-annote) accepts
-the generated `segmentation.onnx`, `embedding.onnx`, and PLDA artifacts. It is
-a strong option for a native `nemo-transcriber` backend. Its current CLI emits
-regular diarization only; this Python backend exposes both Community-1 output
-annotations.
-
 ## Testing
 
 ```powershell
