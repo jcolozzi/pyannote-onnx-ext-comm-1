@@ -6,7 +6,7 @@ setup(
     description="Community-1 speaker diarization with ONNX Runtime neural inference",
     author="User",
     packages=find_packages(),
-    py_modules=["onnx_pyannote"],
+    py_modules=["onnx_export", "onnx_pyannote"],
     install_requires=[
         "onnxruntime>=1.16.0",
         "numpy>=1.24.0",

@@ -1,6 +1,6 @@
 import torch
 
-from export_onnx import SegmentationToMultilabel
+from onnx_export import SegmentationToMultilabel
 
 
 class _FixedPowersetModel(torch.nn.Module):
