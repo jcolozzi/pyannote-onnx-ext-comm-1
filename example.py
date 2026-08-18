@@ -1,34 +1,34 @@
-from onnx_diarization import ONNXSpeakerDiarization
+"""Run the exported Community-1 ONNX pipeline on an audio file."""
+
+from pathlib import Path
 import time
 
-def main():
-    # Initialize the pipeline
-    # Make sure you have run 'python export_onnx.py' first!
-    pipeline = ONNXSpeakerDiarization(
-        model_name="speaker-diarization-3.1",
-        providers=['CPUExecutionProvider'] # Change to 'CUDAExecutionProvider' for GPU
-    )
+from onnx_pyannote import ONNXSpeakerDiarization
 
-    audio_path = "example.wav" # Replace with your audio file
-    
-    # Create a dummy file if it doesn't exist for testing
-    import os
-    if not os.path.exists(audio_path):
-        print(f"File {audio_path} not found. Please provide an audio file path.")
+
+def main() -> None:
+    audio_path = Path("example.wav")
+    if not audio_path.is_file():
+        print(f"{audio_path} not found. Provide an audio file before running this example.")
         return
 
-    print(f"Processing {audio_path}...")
-    start_time = time.time()
-    
-    # Run diarization
-    annotation = pipeline(audio_path)
-    
-    end_time = time.time()
-    print(f"Diarization completed in {end_time - start_time:.2f} seconds.")
+    pipeline = ONNXSpeakerDiarization(
+        "models/onnx-community-1", providers=["CPUExecutionProvider"]
+    )
+    started = time.perf_counter()
+    output = pipeline(audio_path)
+    print(f"Diarization completed in {time.perf_counter() - started:.2f} seconds.")
 
-    # Print results
-    for turn, _, speaker in annotation.itertracks(yield_label=True):
+    print("Regular diarization:")
+    for turn, _, speaker in output.speaker_diarization.itertracks(yield_label=True):
         print(f"[{turn.start:.2f} - {turn.end:.2f}] {speaker}")
+
+    print("Exclusive diarization:")
+    for turn, _, speaker in output.exclusive_speaker_diarization.itertracks(
+        yield_label=True
+    ):
+        print(f"[{turn.start:.2f} - {turn.end:.2f}] {speaker}")
+
 
 if __name__ == "__main__":
     main()
