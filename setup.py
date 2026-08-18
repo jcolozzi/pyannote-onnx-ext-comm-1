@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="pyannote-onnx-extended",
     version="0.1.0",
-    description="A pure ONNX Runtime implementation of Pyannote Speaker Diarization 3.1",
+    description="Community-1 speaker diarization with ONNX Runtime neural inference",
     author="User",
     packages=find_packages(),
     py_modules=["onnx_pyannote"],
@@ -15,7 +15,8 @@ setup(
         "huggingface_hub",
         "pyannote.core",
         "scipy",
-        "librosa",
+        "torch",
+        "torchaudio",
     ],
     python_requires=">=3.8",
 )

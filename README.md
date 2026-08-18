@@ -1,106 +1,114 @@
 # Pyannote ONNX Extended Community-1
 
-A pure ONNX Runtime implementation of the pyannote speaker diarization Community-1 style pipeline.
+This repository provides an ONNX Runtime backend for the gated
+[`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1)
+pipeline. It preserves the reference pipeline's Community-1 behavior instead
+of replacing its post-processing with generic clustering.
 
-This project removes the heavy PyTorch dependency for inference, making it lightweight, fast, and easy to deploy.
+It includes:
 
-Based on pyannote-audio models and inspired by pyannote-onnx.
+- the official 10-second segmentation schedule with a 1-second hop;
+- pyannote's hard powerset-to-multilabel conversion;
+- exact 16 kHz Kaldi FBank preprocessing and local-speaker masking;
+- the shipped PLDA transform, AHC initialization, and VBx clustering;
+- regular overlap-preserving diarization; and
+- separately reconstructed exclusive diarization, using a speaker-count cap of
+  one exactly as Community-1 does.
 
-## Key Features
+## Setup and export
 
-- Pure ONNX Runtime inference (no PyTorch required at runtime)
-- Overlap-aware segmentation stitching
-- Two-stage clustering for more stable short-utterance assignment
-- Native exclusive diarization option
-- Lightweight dependency footprint compared to full pyannote.audio
+Accept the Community-1 model terms on Hugging Face, authenticate, then
+download and convert the checkpoint. PLDA/VBx is not an ONNX graph: its
+supplied `.npz` files are copied alongside the two neural models.
 
-## Recent Changes
-
-- Added native exclusive diarization behavior in ONNXSpeakerDiarization.
-- Added test coverage for exclusive diarization behavior.
-- Added GitHub Actions CI that runs pytest on push and pull request.
-
-## Installation
-
-```bash
-pip install .
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+hf auth login
+hf download pyannote/speaker-diarization-community-1 --local-dir models/community-1
+python export_onnx.py
 ```
 
-## Usage
+The result is an artifact directory like this:
+
+```text
+models/onnx-community-1/
+  segmentation.onnx
+  embedding.onnx
+  plda/plda.npz
+  plda/xvec_transform.npz
+  community-1.json
+```
+
+The neural inference is ONNX Runtime. The exact FBank frontend uses
+`torchaudio` because the Kaldi feature extraction operation cannot be exported
+to ONNX without changing the model interface. This is intentional: changing
+it to a generic Mel frontend breaks Community-1 parity.
+
+## Use from Python
 
 ```python
 from onnx_pyannote import ONNXSpeakerDiarization
 
 pipeline = ONNXSpeakerDiarization(
-    model_name="speaker-diarization-community-1",
-    providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
-    return_exclusive=True,
-)
-
-annotation = pipeline("path/to/your/audio.wav")
-
-for turn, _, speaker in annotation.itertracks(yield_label=True):
-    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker={speaker}")
-```
-
-## Exclusive Diarization
-
-By default, return_exclusive=True.
-
-- return_exclusive=True returns a single active speaker per time instant.
-- return_exclusive=False returns the regular overlap-preserving diarization.
-
-If you already have an annotation, you can convert it directly:
-
-```python
-exclusive = ONNXSpeakerDiarization.build_exclusive_annotation(annotation)
-```
-
-## Community-1 Local ONNX Models
-
-You can run with locally converted community-1 compatible artifacts by passing explicit paths:
-
-```python
-pipeline = ONNXSpeakerDiarization(
-    model_name="speaker-diarization-community-1",
-    segmentation_path="/path/to/segmentation-community.1.onnx",
-    embedding_path="/path/to/wespeaker-voxceleb-resnet34-LM.onnx",
+    "models/onnx-community-1",
     providers=["CPUExecutionProvider"],
-    return_exclusive=True,
 )
+output = pipeline("meeting.wav")
+
+for turn, _, speaker in output.speaker_diarization.itertracks(yield_label=True):
+    print(f"{turn.start:.3f} {turn.end:.3f} {speaker}")
+
+# This is a separate Community-1 reconstruction, not a turn-level tie-breaker.
+exclusive = output.exclusive_speaker_diarization
 ```
 
-If segmentation_path and embedding_path are not provided, defaults are fetched from Hugging Face.
+The default return value is `DiarizationOutput`, which contains both results
+and speaker embeddings. Existing callers that require one `Annotation` can
+request it explicitly:
 
-## Exporting Models (Optional)
-
-If you want to export models to ONNX yourself:
-
-```bash
-pip install -r requirements.txt
-python export_onnx.py --use_auth_token YOUR_HF_TOKEN
+```python
+regular = pipeline("meeting.wav", return_exclusive=False)
+exclusive = pipeline("meeting.wav", return_exclusive=True)
 ```
 
-This creates:
+`num_speakers`, `min_speakers`, and `max_speakers` are supported. As in the
+official pipeline, forcing a speaker count uses K-Means after the VBx estimate.
 
-- models_onnx/segmentation.onnx
-- models_onnx/embedding.onnx
+## Parity verification
+
+The normal unit tests require no gated model. The opt-in integration test uses
+the downloaded Community-1 source pipeline and feeds it the exact same decoded
+waveform as the ONNX backend, so decoder/resampler variations do not mask a
+pipeline mismatch:
+
+```powershell
+$env:RUN_COMMUNITY1_PARITY = "1"
+pytest -q -m integration
+```
+
+On the bundled 73.15-second `cpp-annote` conversation sample, the ONNX backend
+produced exactly the same 16 regular turns and 16 exclusive turns as
+`pyannote.audio` Community-1. It ran in 34.448 seconds on this CPU compared
+with 76.235 seconds for the reference pipeline. The sample has no detected
+overlap, so the integration test also exercises the separate exclusive path on
+inputs where it differs when overlap is present.
+
+## C++ backend
+
+[`moonshine-ai/cpp-annote`](https://github.com/moonshine-ai/cpp-annote) accepts
+the generated `segmentation.onnx`, `embedding.onnx`, and PLDA artifacts. It is
+a strong option for a native `nemo-transcriber` backend. Its current CLI emits
+regular diarization only; this Python backend exposes both Community-1 output
+annotations.
 
 ## Testing
 
-Run tests locally:
-
-```bash
-pip install pytest
+```powershell
 pytest -q
 ```
 
-Current tests include focused checks for exclusive diarization behavior under overlapping and non-overlapping segment conditions.
-
-## CI
-
-GitHub Actions workflow: .github/workflows/ci.yml
-
-- Triggers on push and pull request
-- Installs package in editable mode
-- Runs pytest
+The exporter validates ONNX Runtime model outputs against the source PyTorch
+checkpoint unless `--skip-validation` is passed.
